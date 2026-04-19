@@ -102,6 +102,8 @@ model Transcription {
   durationSec    Float?
   language       String   @default("zh")
   status         String   @default("pending") // pending / processing / completed / failed
+  progress       Int      @default(0)          // 0-100 整體百分比
+  stage          String?                        // 目前階段中文說明，例：抽音訊中 / 辨識中 (2/5)
   categoryIds    String   // JSON array，套用的詞庫分類
   promptUsed     String?  // 實際送給 Whisper 的 prompt
   srtContent     String?  // 完整 SRT 檔內容

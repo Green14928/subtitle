@@ -77,7 +77,9 @@ export async function POST(req: NextRequest) {
         fileName,
         fileSize,
         language,
-        status: "pending",
+        status: "processing",
+        progress: 25,
+        stage: "上傳完成，準備抽音訊",
         categoryIds: JSON.stringify(categoryIds),
         promptUsed: prompt,
         userId,
@@ -112,15 +114,19 @@ async function processTranscription(
   language: string
 ) {
   const chunksToCleanup: string[] = [];
-  try {
+
+  async function setStage(progress: number, stage: string) {
     await prisma.transcription.update({
       where: { id },
-      data: { status: "processing" },
+      data: { progress, stage },
     });
+  }
 
+  try {
     // 沒 key 時走 stub
     if (!process.env.OPENAI_API_KEY) {
       console.warn("[stub] OPENAI_API_KEY 未設定，回傳假資料");
+      await setStage(60, "Demo 模式（無 API key）");
       await new Promise((r) => setTimeout(r, 2000));
       const fakeSegments = [
         { start: 0, end: 3, text: "（示範字幕）這是一段測試用的字幕。" },
@@ -131,6 +137,8 @@ async function processTranscription(
         where: { id },
         data: {
           status: "completed",
+          progress: 100,
+          stage: "完成（Demo）",
           srtContent: segmentsToSRT(fakeSegments),
           vttContent: segmentsToVTT(fakeSegments),
           plainText: segmentsToPlainText(fakeSegments),
@@ -141,41 +149,68 @@ async function processTranscription(
       return;
     }
 
-    // 抽音訊 + 必要時切 chunks
+    await setStage(30, "抽音訊中");
     const chunks = await prepareAudioForTranscribe(inputPath, workDir, token);
     chunksToCleanup.push(...chunks.map((c) => c.path));
-
-    // 原始影片不再需要，刪掉省硬碟
     await safeUnlink(inputPath);
 
-    const result = await transcribeChunks({
-      chunks,
-      initialPrompt: prompt || undefined,
-      language,
-    });
+    const totalChunks = chunks.length;
+    await setStage(
+      40,
+      totalChunks > 1
+        ? `準備辨識（音訊切成 ${totalChunks} 段）`
+        : "準備辨識"
+    );
+
+    // 逐 chunk 辨識以便回報進度
+    const { transcribeOneChunk, mergeSegments } = await import("@/lib/openai-transcribe");
+    const allSegments: { start: number; end: number; text: string }[] = [];
+    let detectedLanguage = language;
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const base = 40;
+      const span = 55; // 40→95 分配給辨識
+      const before = base + Math.floor((span * i) / totalChunks);
+      await setStage(before, totalChunks > 1 ? `辨識中 (${i + 1}/${totalChunks})` : "辨識中");
+
+      const res = await transcribeOneChunk(chunk, {
+        initialPrompt: prompt || undefined,
+        language,
+      });
+      if (res.language) detectedLanguage = res.language;
+      allSegments.push(...res.segments);
+    }
+
+    const merged = mergeSegments(allSegments);
 
     await prisma.transcription.update({
       where: { id },
       data: {
         status: "completed",
-        srtContent: segmentsToSRT(result.segments),
-        vttContent: segmentsToVTT(result.segments),
-        plainText: segmentsToPlainText(result.segments),
+        progress: 100,
+        stage: "完成",
+        srtContent: segmentsToSRT(merged),
+        vttContent: segmentsToVTT(merged),
+        plainText: segmentsToPlainText(merged),
         completedAt: new Date(),
       },
     });
+
+    // 辨識用完的 detectedLanguage 暫時沒地方存（可忽略）
+    void detectedLanguage;
   } catch (err: any) {
     console.error("[transcribe] failed", err);
     await prisma.transcription.update({
       where: { id },
       data: {
         status: "failed",
+        stage: "失敗",
         errorMessage: err?.message || String(err),
       },
     });
     await safeUnlink(inputPath);
   } finally {
-    // 無論成敗都清 chunks
     for (const p of chunksToCleanup) {
       await safeUnlink(p);
     }

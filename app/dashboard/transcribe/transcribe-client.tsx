@@ -13,6 +13,8 @@ type Transcription = {
   id: string;
   fileName: string;
   status: string;
+  progress: number;
+  stage: string | null;
   srtContent: string | null;
   vttContent: string | null;
   plainText: string | null;
@@ -25,6 +27,7 @@ export function TranscribeClient({ categories }: { categories: Category[] }) {
   const [selectedCats, setSelectedCats] = useState<Set<string>>(new Set());
   const [language, setLanguage] = useState("zh");
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0); // 0-100
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [result, setResult] = useState<Transcription | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -64,33 +67,17 @@ export function TranscribeClient({ categories }: { categories: Category[] }) {
       return;
     }
     setUploading(true);
+    setUploadProgress(0);
     setResult(null);
     try {
-      // 大檔直送 raw body，metadata 走 header，server 串流寫入避免 OOM
-      const res = await fetch("/api/transcribe", {
-        method: "POST",
-        headers: {
-          "Content-Type": file.type || "application/octet-stream",
-          "X-File-Name": encodeURIComponent(file.name),
-          "X-Language": language,
-          "X-Category-Ids": JSON.stringify(Array.from(selectedCats)),
-        },
-        body: file,
+      // 用 XHR 以便拿到上傳進度
+      const { id } = await uploadWithProgress(file, {
+        categoryIds: Array.from(selectedCats),
+        language,
+        onProgress: (pct) => setUploadProgress(pct),
       });
-      if (!res.ok) {
-        const text = await res.text();
-        let msg = `HTTP ${res.status}`;
-        try {
-          const data = JSON.parse(text);
-          msg = data.error || data.message || text || msg;
-        } catch {
-          msg = text || msg;
-        }
-        throw new Error(`上傳失敗 (${res.status})：${msg}`);
-      }
-      const { id } = await res.json();
       setCurrentId(id);
-      toast.success("辨識已啟動，處理中…");
+      toast.success("上傳完成，辨識中…");
     } catch (e: any) {
       toast.error(e.message || "失敗");
     } finally {
@@ -245,14 +232,27 @@ export function TranscribeClient({ categories }: { categories: Category[] }) {
         )}
       </div>
 
+      {/* 上傳中：顯示上傳進度條（0-25% 對應 0-100% 上傳完成）*/}
+      {uploading && (
+        <section className="border-t pt-6">
+          <h2 className="text-sm font-bold text-slate-900 mb-3">上傳中</h2>
+          <ProgressBar percent={uploadProgress} label={`上傳中 ${uploadProgress}%`} />
+        </section>
+      )}
+
       {/* 結果 */}
       {currentId && (
         <section className="border-t pt-6">
           <h2 className="text-sm font-bold text-slate-900 mb-3">辨識結果</h2>
           {!result || result.status === "pending" || result.status === "processing" ? (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-900 flex items-center gap-3">
-              <div className="animate-spin w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full" />
-              <span>辨識中，大檔案可能需要幾分鐘…</span>
+            <div className="space-y-3">
+              <ProgressBar
+                percent={result?.progress ?? 25}
+                label={result?.stage || "準備中"}
+              />
+              <p className="text-xs text-slate-500">
+                整體進度會隨階段更新，大檔案可能需要幾分鐘。
+              </p>
             </div>
           ) : result.status === "failed" ? (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-900">
@@ -326,4 +326,69 @@ export function TranscribeClient({ categories }: { categories: Category[] }) {
       )}
     </div>
   );
+}
+
+function ProgressBar({ percent, label }: { percent: number; label: string }) {
+  const p = Math.max(0, Math.min(100, Math.round(percent)));
+  return (
+    <div>
+      <div className="flex items-center justify-between text-xs text-slate-700 mb-1">
+        <span>{label}</span>
+        <span className="font-medium tabular-nums">{p}%</span>
+      </div>
+      <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
+        <div
+          className="h-full bg-gradient-to-r from-violet-500 to-pink-500 transition-all duration-300"
+          style={{ width: `${p}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// 用 XHR 包一層上傳，提供 onProgress
+function uploadWithProgress(
+  file: File,
+  opts: { categoryIds: string[]; language: string; onProgress: (pct: number) => void }
+): Promise<{ id: string }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/transcribe", true);
+    xhr.setRequestHeader(
+      "Content-Type",
+      file.type || "application/octet-stream"
+    );
+    xhr.setRequestHeader("X-File-Name", encodeURIComponent(file.name));
+    xhr.setRequestHeader("X-Language", opts.language);
+    xhr.setRequestHeader("X-Category-Ids", JSON.stringify(opts.categoryIds));
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        opts.onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText));
+        } catch {
+          reject(new Error("上傳成功但回應格式異常"));
+        }
+      } else {
+        let msg = `HTTP ${xhr.status}`;
+        try {
+          const data = JSON.parse(xhr.responseText);
+          msg = data.error || data.message || xhr.responseText || msg;
+        } catch {
+          msg = xhr.responseText || msg;
+        }
+        reject(new Error(`上傳失敗 (${xhr.status})：${msg}`));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("網路錯誤，請檢查連線"));
+    xhr.ontimeout = () => reject(new Error("上傳超時"));
+    xhr.send(file);
+  });
 }

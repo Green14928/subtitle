@@ -102,6 +102,10 @@ const STATEMENTS = [
   )`,
   `CREATE INDEX IF NOT EXISTS "Transcription_userId_idx" ON "Transcription"("userId")`,
   `CREATE INDEX IF NOT EXISTS "Transcription_status_idx" ON "Transcription"("status")`,
+
+  // 2026-04-19 新增：progress + stage 欄位（Postgres 9.6+ 支援 IF NOT EXISTS）
+  `ALTER TABLE "Transcription" ADD COLUMN IF NOT EXISTS "progress" INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE "Transcription" ADD COLUMN IF NOT EXISTS "stage" TEXT`,
 ];
 
 export async function POST(req: NextRequest) {

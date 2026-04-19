@@ -27,45 +27,64 @@ function getClient() {
   return new OpenAI({ apiKey: key });
 }
 
+// 單一 chunk 辨識，回傳已調整 offset 的 segments
+export async function transcribeOneChunk(
+  chunk: AudioChunk,
+  opts: { initialPrompt?: string; language?: string }
+): Promise<{ segments: Segment[]; language: string }> {
+  const openai = getClient();
+  const res: any = await openai.audio.transcriptions.create({
+    file: createReadStream(chunk.path) as any,
+    model: "whisper-1",
+    language: opts.language,
+    prompt: opts.initialPrompt,
+    response_format: "verbose_json",
+    timestamp_granularities: ["segment"],
+  });
+
+  const segs = (res.segments || []) as Array<{
+    start: number;
+    end: number;
+    text: string;
+  }>;
+
+  return {
+    segments: segs.map((s) => ({
+      start: s.start + chunk.startSec,
+      end: s.end + chunk.startSec,
+      text: (s.text || "").trim(),
+    })),
+    language: res.language || opts.language || "zh",
+  };
+}
+
+// 多 chunk 依序辨識（無進度回報，想要進度請在外面自己迴圈）
 export async function transcribeChunks(
   options: TranscribeOptions
 ): Promise<TranscribeResult> {
-  const openai = getClient();
   const allSegments: Segment[] = [];
   let detectedLanguage = options.language || "zh";
 
   for (const chunk of options.chunks) {
-    const res: any = await openai.audio.transcriptions.create({
-      file: createReadStream(chunk.path) as any,
-      model: "whisper-1",
+    const res = await transcribeOneChunk(chunk, {
+      initialPrompt: options.initialPrompt,
       language: options.language,
-      prompt: options.initialPrompt,
-      response_format: "verbose_json",
-      timestamp_granularities: ["segment"],
     });
-
     if (res.language) detectedLanguage = res.language;
-
-    const segs = (res.segments || []) as Array<{
-      start: number;
-      end: number;
-      text: string;
-    }>;
-
-    for (const s of segs) {
-      allSegments.push({
-        start: s.start + chunk.startSec,
-        end: s.end + chunk.startSec,
-        text: (s.text || "").trim(),
-      });
-    }
+    allSegments.push(...res.segments);
   }
 
+  const merged = mergeSegments(allSegments);
   return {
-    segments: allSegments,
+    segments: merged,
     language: detectedLanguage,
-    text: allSegments.map((s) => s.text).join(" "),
+    text: merged.map((s) => s.text).join(" "),
   };
+}
+
+// 合併 segments（理論上各 chunk 的 offset 已調整，直接按 start 排序即可）
+export function mergeSegments(segs: Segment[]): Segment[] {
+  return [...segs].sort((a, b) => a.start - b.start);
 }
 
 // 組合 prompt：把詞庫詞彙列表轉成一句「這段影片可能會提到：...」
