@@ -11,17 +11,28 @@ export const maxDuration = 300; // 5 minutes
 
 // 處理影片/音訊上傳並啟動辨識
 export async function POST(req: NextRequest) {
-  const { error, userId } = await requireAuth();
-  if (error) return error;
+  try {
+    const { error, userId } = await requireAuth();
+    if (error) return error;
 
-  const formData = await req.formData();
-  const file = formData.get("file") as File | null;
-  const categoryIdsRaw = formData.get("categoryIds") as string;
-  const language = (formData.get("language") as string) || "zh";
+    let formData: FormData;
+    try {
+      formData = await req.formData();
+    } catch (e: any) {
+      console.error("[transcribe] formData parse failed", e);
+      return NextResponse.json(
+        { error: `讀取上傳內容失敗：${e?.message || String(e)}` },
+        { status: 400 }
+      );
+    }
 
-  if (!file) {
-    return NextResponse.json({ error: "沒有檔案" }, { status: 400 });
-  }
+    const file = formData.get("file") as File | null;
+    const categoryIdsRaw = formData.get("categoryIds") as string;
+    const language = (formData.get("language") as string) || "zh";
+
+    if (!file) {
+      return NextResponse.json({ error: "沒有檔案" }, { status: 400 });
+    }
 
   const categoryIds: string[] = categoryIdsRaw ? JSON.parse(categoryIdsRaw) : [];
 
@@ -67,11 +78,18 @@ export async function POST(req: NextRequest) {
     (err) => console.error("Transcription error:", err)
   );
 
-  return NextResponse.json({
-    id: transcription.id,
-    status: "processing",
-    message: "辨識已開始，請稍候",
-  });
+    return NextResponse.json({
+      id: transcription.id,
+      status: "processing",
+      message: "辨識已開始，請稍候",
+    });
+  } catch (err: any) {
+    console.error("[transcribe POST] fatal", err);
+    return NextResponse.json(
+      { error: `伺服器錯誤：${err?.message || String(err)}` },
+      { status: 500 }
+    );
+  }
 }
 
 // 算出給 Replicate 用的 public origin

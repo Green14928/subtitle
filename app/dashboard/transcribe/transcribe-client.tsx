@@ -73,8 +73,15 @@ export function TranscribeClient({ categories }: { categories: Category[] }) {
 
       const res = await fetch("/api/transcribe", { method: "POST", body: fd });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "上傳失敗");
+        const text = await res.text();
+        let msg = `HTTP ${res.status}`;
+        try {
+          const data = JSON.parse(text);
+          msg = data.error || data.message || text || msg;
+        } catch {
+          msg = text || msg;
+        }
+        throw new Error(`上傳失敗 (${res.status})：${msg}`);
       }
       const { id } = await res.json();
       setCurrentId(id);
