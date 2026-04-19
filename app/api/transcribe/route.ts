@@ -3,80 +3,96 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth-helpers";
 import { transcribe, buildPromptFromTerms } from "@/lib/replicate";
 import { segmentsToSRT, segmentsToVTT, segmentsToPlainText } from "@/lib/srt";
-import { writeFile, mkdir, unlink } from "fs/promises";
+import { mkdir, unlink, stat } from "fs/promises";
+import { createWriteStream } from "fs";
+import { Readable } from "stream";
+import { pipeline } from "stream/promises";
 import path from "path";
 import crypto from "crypto";
 
 export const maxDuration = 300; // 5 minutes
+export const runtime = "nodejs";
 
-// 處理影片/音訊上傳並啟動辨識
+// 上傳大檔用 raw body + header metadata，串流寫入硬碟避免 OOM
+// Client 以 fetch("POST", body: file) 直送，metadata 走 header
 export async function POST(req: NextRequest) {
   try {
     const { error, userId } = await requireAuth();
     if (error) return error;
 
-    let formData: FormData;
+    const fileNameRaw = req.headers.get("x-file-name");
+    const categoryIdsRaw = req.headers.get("x-category-ids") || "[]";
+    const language = req.headers.get("x-language") || "zh";
+
+    if (!fileNameRaw) {
+      return NextResponse.json({ error: "缺少 X-File-Name header" }, { status: 400 });
+    }
+    if (!req.body) {
+      return NextResponse.json({ error: "沒有檔案內容" }, { status: 400 });
+    }
+
+    const fileName = decodeURIComponent(fileNameRaw);
+    let categoryIds: string[];
     try {
-      formData = await req.formData();
+      categoryIds = JSON.parse(categoryIdsRaw);
+    } catch {
+      return NextResponse.json({ error: "categoryIds 格式錯誤" }, { status: 400 });
+    }
+
+    // 收集詞庫的所有詞彙 → 組 prompt
+    const terms = await prisma.term.findMany({
+      where: { userId, categoryId: { in: categoryIds } },
+      select: { text: true },
+    });
+    const prompt = buildPromptFromTerms(terms.map((t) => t.text));
+
+    // 存檔到 ./uploads/{userId}/
+    const uploadsDir = path.join(process.cwd(), "uploads", userId);
+    await mkdir(uploadsDir, { recursive: true });
+
+    // 隨機 32 字元 hex token 作為 capability URL，無法猜測
+    const token = crypto.randomBytes(16).toString("hex");
+    const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const storedName = `${token}_${safeName}`;
+    const filePath = path.join(uploadsDir, storedName);
+
+    // 串流：Web ReadableStream → Node Readable → writeStream
+    const nodeReadable = Readable.fromWeb(req.body as any);
+    const writeStream = createWriteStream(filePath);
+    try {
+      await pipeline(nodeReadable, writeStream);
     } catch (e: any) {
-      console.error("[transcribe] formData parse failed", e);
+      console.error("[transcribe] stream write failed", e);
       return NextResponse.json(
-        { error: `讀取上傳內容失敗：${e?.message || String(e)}` },
-        { status: 400 }
+        { error: `寫檔失敗：${e?.message || String(e)}` },
+        { status: 500 }
       );
     }
 
-    const file = formData.get("file") as File | null;
-    const categoryIdsRaw = formData.get("categoryIds") as string;
-    const language = (formData.get("language") as string) || "zh";
+    const stats = await stat(filePath);
+    const fileSize = stats.size;
 
-    if (!file) {
-      return NextResponse.json({ error: "沒有檔案" }, { status: 400 });
-    }
+    // 建立 Transcription 記錄
+    const transcription = await prisma.transcription.create({
+      data: {
+        fileName,
+        fileSize,
+        language,
+        status: "pending",
+        categoryIds: JSON.stringify(categoryIds),
+        promptUsed: prompt,
+        userId,
+      },
+    });
 
-  const categoryIds: string[] = categoryIdsRaw ? JSON.parse(categoryIdsRaw) : [];
+    // 組出 Replicate 可存取的 public URL
+    const origin = resolvePublicOrigin(req);
+    const publicUrl = `${origin}/api/file/${encodeURIComponent(userId)}/${encodeURIComponent(storedName)}`;
 
-  // 收集詞庫的所有詞彙 → 組 prompt
-  const terms = await prisma.term.findMany({
-    where: { userId, categoryId: { in: categoryIds } },
-    select: { text: true },
-  });
-  const prompt = buildPromptFromTerms(terms.map((t) => t.text));
-
-  // 存檔到 ./uploads/{userId}/
-  const uploadsDir = path.join(process.cwd(), "uploads", userId);
-  await mkdir(uploadsDir, { recursive: true });
-
-  // 隨機 32 字元 hex token 作為 capability URL，無法猜測
-  const token = crypto.randomBytes(16).toString("hex");
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const storedName = `${token}_${safeName}`;
-  const filePath = path.join(uploadsDir, storedName);
-
-  const buffer = Buffer.from(await file.arrayBuffer());
-  await writeFile(filePath, buffer);
-
-  // 建立 Transcription 記錄
-  const transcription = await prisma.transcription.create({
-    data: {
-      fileName: file.name,
-      fileSize: file.size,
-      language,
-      status: "pending",
-      categoryIds: JSON.stringify(categoryIds),
-      promptUsed: prompt,
-      userId,
-    },
-  });
-
-  // 組出 Replicate 可存取的 public URL
-  const origin = resolvePublicOrigin(req);
-  const publicUrl = `${origin}/api/file/${encodeURIComponent(userId)}/${encodeURIComponent(storedName)}`;
-
-  // 非同步處理：先回 response，背景啟動辨識
-  processTranscription(transcription.id, filePath, publicUrl, prompt, language).catch(
-    (err) => console.error("Transcription error:", err)
-  );
+    // 非同步處理：先回 response，背景啟動辨識
+    processTranscription(transcription.id, filePath, publicUrl, prompt, language).catch(
+      (err) => console.error("Transcription error:", err)
+    );
 
     return NextResponse.json({
       id: transcription.id,

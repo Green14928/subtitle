@@ -66,12 +66,17 @@ export function TranscribeClient({ categories }: { categories: Category[] }) {
     setUploading(true);
     setResult(null);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("language", language);
-      fd.append("categoryIds", JSON.stringify(Array.from(selectedCats)));
-
-      const res = await fetch("/api/transcribe", { method: "POST", body: fd });
+      // 大檔直送 raw body，metadata 走 header，server 串流寫入避免 OOM
+      const res = await fetch("/api/transcribe", {
+        method: "POST",
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+          "X-File-Name": encodeURIComponent(file.name),
+          "X-Language": language,
+          "X-Category-Ids": JSON.stringify(Array.from(selectedCats)),
+        },
+        body: file,
+      });
       if (!res.ok) {
         const text = await res.text();
         let msg = `HTTP ${res.status}`;
