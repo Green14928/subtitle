@@ -16,6 +16,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ARG DATABASE_URL
 ENV DATABASE_URL=${DATABASE_URL}
 RUN node scripts/prepare-prisma.js && npx prisma generate
+RUN mkdir -p public
 RUN npm run build
 
 FROM node:22-alpine AS runner
