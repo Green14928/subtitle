@@ -45,4 +45,4 @@ RUN mkdir -p /app/uploads
 EXPOSE 3002
 
 # On container start: ensure schema is switched for postgres, apply migrations, then run server
-CMD ["sh", "-c", "echo '[boot] starting server.js'; exec node server.js"]
+CMD ["sh", "-c", "echo '[boot] PORT='${PORT}' forcing 3002'; export PORT=3002; export HOSTNAME=0.0.0.0; exec node server.js"]
