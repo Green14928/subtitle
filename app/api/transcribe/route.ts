@@ -3,8 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth-helpers";
 import { transcribe, buildPromptFromTerms } from "@/lib/replicate";
 import { segmentsToSRT, segmentsToVTT, segmentsToPlainText } from "@/lib/srt";
-import { writeFile, mkdir } from "fs/promises";
+import { writeFile, mkdir, unlink } from "fs/promises";
 import path from "path";
+import crypto from "crypto";
 
 export const maxDuration = 300; // 5 minutes
 
@@ -35,9 +36,10 @@ export async function POST(req: NextRequest) {
   const uploadsDir = path.join(process.cwd(), "uploads", userId);
   await mkdir(uploadsDir, { recursive: true });
 
+  // 隨機 32 字元 hex token 作為 capability URL，無法猜測
+  const token = crypto.randomBytes(16).toString("hex");
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const timestamp = Date.now();
-  const storedName = `${timestamp}_${safeName}`;
+  const storedName = `${token}_${safeName}`;
   const filePath = path.join(uploadsDir, storedName);
 
   const buffer = Buffer.from(await file.arrayBuffer());
@@ -56,8 +58,12 @@ export async function POST(req: NextRequest) {
     },
   });
 
+  // 組出 Replicate 可存取的 public URL
+  const origin = resolvePublicOrigin(req);
+  const publicUrl = `${origin}/api/file/${encodeURIComponent(userId)}/${encodeURIComponent(storedName)}`;
+
   // 非同步處理：先回 response，背景啟動辨識
-  processTranscription(transcription.id, filePath, prompt, language).catch(
+  processTranscription(transcription.id, filePath, publicUrl, prompt, language).catch(
     (err) => console.error("Transcription error:", err)
   );
 
@@ -68,10 +74,24 @@ export async function POST(req: NextRequest) {
   });
 }
 
+// 算出給 Replicate 用的 public origin
+// 優先順序：AUTH_URL > NEXTAUTH_URL > request origin
+function resolvePublicOrigin(req: NextRequest): string {
+  const envUrl = process.env.AUTH_URL || process.env.NEXTAUTH_URL;
+  if (envUrl && !envUrl.includes("localhost") && !envUrl.includes("127.0.0.1")) {
+    return envUrl.replace(/\/$/, "");
+  }
+  // fallback：從 request header 推
+  const host = req.headers.get("host") || "localhost:3002";
+  const proto = req.headers.get("x-forwarded-proto") || (host.includes("localhost") ? "http" : "https");
+  return `${proto}://${host}`;
+}
+
 // 背景處理函式
 async function processTranscription(
   id: string,
   filePath: string,
+  publicUrl: string,
   prompt: string,
   language: string
 ) {
@@ -81,8 +101,7 @@ async function processTranscription(
       data: { status: "processing" },
     });
 
-    // 目前是 stub：如果沒有 REPLICATE_API_TOKEN，回假資料
-    // 有 token 時會真的呼叫 Replicate
+    // 沒 token 時走 stub（本機還沒設 key 時也能測 UI）
     if (!process.env.REPLICATE_API_TOKEN) {
       console.warn("[stub] REPLICATE_API_TOKEN 未設定，回傳假資料");
       await new Promise((r) => setTimeout(r, 3000));
@@ -103,15 +122,37 @@ async function processTranscription(
           completedAt: new Date(),
         },
       });
+      await safeUnlink(filePath);
       return;
     }
 
-    // 真實呼叫（需要 public URL，本機開發要改架構或用 Vercel Blob）
-    // TODO Phase 2: 檔案上傳到 Vercel Blob / R2 / Zeabur Storage 取得 public URL
-    throw new Error(
-      "尚未實作 public URL 上傳流程。部署到 Zeabur 時需要加 Object Storage。"
-    );
+    // 公網網址不能是 localhost，否則 Replicate 抓不到
+    if (publicUrl.includes("localhost") || publicUrl.includes("127.0.0.1")) {
+      throw new Error(
+        "本機開發不能直接跑真實辨識：publicUrl 是 localhost，Replicate 抓不到。請部署到 Zeabur 測試，或用 ngrok 開 tunnel。"
+      );
+    }
+
+    const result = await transcribe({
+      audioUrl: publicUrl,
+      initialPrompt: prompt || undefined,
+      language,
+    });
+
+    await prisma.transcription.update({
+      where: { id },
+      data: {
+        status: "completed",
+        srtContent: segmentsToSRT(result.segments),
+        vttContent: segmentsToVTT(result.segments),
+        plainText: segmentsToPlainText(result.segments),
+        completedAt: new Date(),
+      },
+    });
+
+    await safeUnlink(filePath);
   } catch (err: any) {
+    console.error("[transcribe] failed", err);
     await prisma.transcription.update({
       where: { id },
       data: {
@@ -119,6 +160,15 @@ async function processTranscription(
         errorMessage: err?.message || String(err),
       },
     });
+    await safeUnlink(filePath);
+  }
+}
+
+async function safeUnlink(filePath: string) {
+  try {
+    await unlink(filePath);
+  } catch {
+    // 檔案已不存在就算了
   }
 }
 
