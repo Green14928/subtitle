@@ -12,7 +12,7 @@ export default async function TranscribePage() {
     orderBy: { createdAt: "asc" },
   });
 
-  const hasReplicate = !!process.env.REPLICATE_API_TOKEN;
+  const hasOpenAI = !!process.env.OPENAI_API_KEY;
 
   return (
     <div className="space-y-4">
@@ -23,14 +23,14 @@ export default async function TranscribePage() {
         </p>
       </div>
 
-      {!hasReplicate && (
+      {!hasOpenAI && (
         <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-4 text-sm">
           <div className="font-bold mb-1">⚠️ Demo 模式</div>
           <p>
-            目前還沒設定 <code className="bg-amber-100 px-1 rounded">REPLICATE_API_TOKEN</code>
+            目前還沒設定 <code className="bg-amber-100 px-1 rounded">OPENAI_API_KEY</code>
             ，所以辨識會回傳示範用的假字幕。
-            等你去 <a href="https://replicate.com/account/api-tokens" className="underline font-medium" target="_blank">Replicate</a> 拿 API key 後，
-            加到 <code className="bg-amber-100 px-1 rounded">.env.local</code> 重啟即可真正辨識。
+            到 <a href="https://platform.openai.com/api-keys" className="underline font-medium" target="_blank">OpenAI</a> 拿 API key 後，
+            設到伺服器環境變數重啟即可真正辨識。
           </p>
         </div>
       )}

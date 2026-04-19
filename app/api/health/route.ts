@@ -8,7 +8,7 @@ export async function GET() {
     AUTH_URL: process.env.AUTH_URL || null,
     GOOGLE_CLIENT_ID: !!process.env.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: !!process.env.GOOGLE_CLIENT_SECRET,
-    REPLICATE_API_TOKEN: !!process.env.REPLICATE_API_TOKEN,
+    OPENAI_API_KEY: !!process.env.OPENAI_API_KEY,
     ALLOWED_EMAILS: (process.env.ALLOWED_EMAILS || "")
       .split(",")
       .map((e) => e.trim())

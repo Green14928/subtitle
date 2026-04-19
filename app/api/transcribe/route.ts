@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/auth-helpers";
-import { transcribe, buildPromptFromTerms } from "@/lib/replicate";
+import { transcribeChunks, buildPromptFromTerms } from "@/lib/openai-transcribe";
+import { prepareAudioForTranscribe, safeUnlink } from "@/lib/audio";
 import { segmentsToSRT, segmentsToVTT, segmentsToPlainText } from "@/lib/srt";
-import { mkdir, unlink, stat } from "fs/promises";
+import { mkdir, stat } from "fs/promises";
 import { createWriteStream } from "fs";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
@@ -50,7 +51,6 @@ export async function POST(req: NextRequest) {
     const uploadsDir = path.join(process.cwd(), "uploads", userId);
     await mkdir(uploadsDir, { recursive: true });
 
-    // 隨機 32 字元 hex token 作為 capability URL，無法猜測
     const token = crypto.randomBytes(16).toString("hex");
     const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
     const storedName = `${token}_${safeName}`;
@@ -72,7 +72,6 @@ export async function POST(req: NextRequest) {
     const stats = await stat(filePath);
     const fileSize = stats.size;
 
-    // 建立 Transcription 記錄
     const transcription = await prisma.transcription.create({
       data: {
         fileName,
@@ -85,12 +84,8 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // 組出 Replicate 可存取的 public URL
-    const origin = resolvePublicOrigin(req);
-    const publicUrl = `${origin}/api/file/${encodeURIComponent(userId)}/${encodeURIComponent(storedName)}`;
-
-    // 非同步處理：先回 response，背景啟動辨識
-    processTranscription(transcription.id, filePath, publicUrl, prompt, language).catch(
+    // 非同步跑辨識
+    processTranscription(transcription.id, filePath, uploadsDir, token, prompt, language).catch(
       (err) => console.error("Transcription error:", err)
     );
 
@@ -108,44 +103,30 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// 算出給 Replicate 用的 public origin
-// 優先順序：AUTH_URL > NEXTAUTH_URL > request origin
-function resolvePublicOrigin(req: NextRequest): string {
-  const envUrl = process.env.AUTH_URL || process.env.NEXTAUTH_URL;
-  if (envUrl && !envUrl.includes("localhost") && !envUrl.includes("127.0.0.1")) {
-    return envUrl.replace(/\/$/, "");
-  }
-  // fallback：從 request header 推
-  const host = req.headers.get("host") || "localhost:3002";
-  const proto = req.headers.get("x-forwarded-proto") || (host.includes("localhost") ? "http" : "https");
-  return `${proto}://${host}`;
-}
-
-// 背景處理函式
 async function processTranscription(
   id: string,
-  filePath: string,
-  publicUrl: string,
+  inputPath: string,
+  workDir: string,
+  token: string,
   prompt: string,
   language: string
 ) {
+  const chunksToCleanup: string[] = [];
   try {
     await prisma.transcription.update({
       where: { id },
       data: { status: "processing" },
     });
 
-    // 沒 token 時走 stub（本機還沒設 key 時也能測 UI）
-    if (!process.env.REPLICATE_API_TOKEN) {
-      console.warn("[stub] REPLICATE_API_TOKEN 未設定，回傳假資料");
-      await new Promise((r) => setTimeout(r, 3000));
-
+    // 沒 key 時走 stub
+    if (!process.env.OPENAI_API_KEY) {
+      console.warn("[stub] OPENAI_API_KEY 未設定，回傳假資料");
+      await new Promise((r) => setTimeout(r, 2000));
       const fakeSegments = [
         { start: 0, end: 3, text: "（示範字幕）這是一段測試用的字幕。" },
-        { start: 3, end: 7, text: "設定 REPLICATE_API_TOKEN 後就會呼叫真正的 WhisperX。" },
+        { start: 3, end: 7, text: "設定 OPENAI_API_KEY 後就會呼叫真正的 Whisper。" },
         { start: 7, end: 10, text: "詞庫 prompt: " + prompt.slice(0, 100) },
       ];
-
       await prisma.transcription.update({
         where: { id },
         data: {
@@ -156,19 +137,19 @@ async function processTranscription(
           completedAt: new Date(),
         },
       });
-      await safeUnlink(filePath);
+      await safeUnlink(inputPath);
       return;
     }
 
-    // 公網網址不能是 localhost，否則 Replicate 抓不到
-    if (publicUrl.includes("localhost") || publicUrl.includes("127.0.0.1")) {
-      throw new Error(
-        "本機開發不能直接跑真實辨識：publicUrl 是 localhost，Replicate 抓不到。請部署到 Zeabur 測試，或用 ngrok 開 tunnel。"
-      );
-    }
+    // 抽音訊 + 必要時切 chunks
+    const chunks = await prepareAudioForTranscribe(inputPath, workDir, token);
+    chunksToCleanup.push(...chunks.map((c) => c.path));
 
-    const result = await transcribe({
-      audioUrl: publicUrl,
+    // 原始影片不再需要，刪掉省硬碟
+    await safeUnlink(inputPath);
+
+    const result = await transcribeChunks({
+      chunks,
       initialPrompt: prompt || undefined,
       language,
     });
@@ -183,8 +164,6 @@ async function processTranscription(
         completedAt: new Date(),
       },
     });
-
-    await safeUnlink(filePath);
   } catch (err: any) {
     console.error("[transcribe] failed", err);
     await prisma.transcription.update({
@@ -194,15 +173,12 @@ async function processTranscription(
         errorMessage: err?.message || String(err),
       },
     });
-    await safeUnlink(filePath);
-  }
-}
-
-async function safeUnlink(filePath: string) {
-  try {
-    await unlink(filePath);
-  } catch {
-    // 檔案已不存在就算了
+    await safeUnlink(inputPath);
+  } finally {
+    // 無論成敗都清 chunks
+    for (const p of chunksToCleanup) {
+      await safeUnlink(p);
+    }
   }
 }
 

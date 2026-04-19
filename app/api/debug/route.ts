@@ -24,6 +24,22 @@ export async function GET() {
   await try_("users_sample", () =>
     prisma.user.findMany({ take: 3, select: { id: true, email: true, createdAt: true } })
   );
+  await try_("latest_transcriptions", () =>
+    prisma.transcription.findMany({
+      take: 5,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        fileName: true,
+        fileSize: true,
+        status: true,
+        errorMessage: true,
+        createdAt: true,
+        completedAt: true,
+        replicateId: true,
+      },
+    })
+  );
 
   return NextResponse.json({ checks, time: new Date().toISOString() });
 }
