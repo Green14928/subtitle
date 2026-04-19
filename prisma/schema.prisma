@@ -1,0 +1,118 @@
+// Subtitle - 字幕辨識系統
+// 本機開發：SQLite  /  部署 Zeabur：Postgres
+// 切換時把 provider 改成 postgresql 並更新 DATABASE_URL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── NextAuth 標準表 ───────────────────────────
+model User {
+  id            String          @id @default(cuid())
+  name          String?
+  email         String          @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  categories    Category[]
+  terms         Term[]
+  transcriptions Transcription[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── 字幕系統核心表 ────────────────────────────
+
+// 詞庫分類（例：占星術語、能量療癒、靈性哲學）
+model Category {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  color       String?  // UI 用顏色 tag
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  terms       Term[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// 詞彙
+model Term {
+  id         String   @id @default(cuid())
+  text       String   // 正確寫法，例：「梅爾卡巴」
+  notes      String?  // 使用情境備註（可選）
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@index([categoryId])
+  @@index([userId])
+}
+
+// 辨識紀錄
+model Transcription {
+  id             String   @id @default(cuid())
+  fileName       String
+  fileSize       Int?
+  durationSec    Float?
+  language       String   @default("zh")
+  status         String   @default("pending") // pending / processing / completed / failed
+  categoryIds    String   // JSON array，套用的詞庫分類
+  promptUsed     String?  // 實際送給 Whisper 的 prompt
+  srtContent     String?  // 完整 SRT 檔內容
+  vttContent     String?  // 完整 VTT 檔內容
+  plainText      String?  // 純文字逐字稿
+  errorMessage   String?
+  replicateId    String?  // Replicate prediction id
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+  completedAt    DateTime?
+
+  @@index([userId])
+  @@index([status])
+}
