@@ -45,4 +45,4 @@ RUN mkdir -p /app/uploads
 EXPOSE 3002
 
 # On container start: ensure schema is switched for postgres, apply migrations, then run server
-CMD ["sh", "-c", "node scripts/prepare-prisma.js && npx prisma db push --accept-data-loss --skip-generate && node server.js"]
+CMD ["sh", "-c", "node scripts/prepare-prisma.js && node node_modules/prisma/build/index.js db push --accept-data-loss --skip-generate && node server.js"]
