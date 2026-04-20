@@ -53,9 +53,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "categoryIds 格式錯誤" }, { status: 400 });
     }
 
-    // 收集詞庫：text + aliases
+    // 收集詞庫（全站共用，不分使用者）：text + aliases
     const terms = await prisma.term.findMany({
-      where: { userId, categoryId: { in: categoryIds } },
+      where: { categoryId: { in: categoryIds } },
       select: { text: true, aliases: true },
     });
     const termEntries: TermEntry[] = terms.map((t) => ({
@@ -256,11 +256,11 @@ async function processTranscription(
 }
 
 export async function GET() {
-  const { error, userId } = await requireAuth();
+  const { error } = await requireAuth();
   if (error) return error;
 
+  // 全站共用：不分 userId
   const list = await prisma.transcription.findMany({
-    where: { userId },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
@@ -272,6 +272,7 @@ export async function GET() {
       createdAt: true,
       completedAt: true,
       errorMessage: true,
+      user: { select: { name: true, email: true, image: true } },
     },
   });
 

@@ -6,12 +6,13 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { error, userId } = await requireAuth();
+  const { error } = await requireAuth();
   if (error) return error;
   const { id } = await params;
 
-  const t = await prisma.transcription.findFirst({
-    where: { id, userId },
+  const t = await prisma.transcription.findUnique({
+    where: { id },
+    include: { user: { select: { name: true, email: true, image: true } } },
   });
   if (!t) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -22,11 +23,11 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { error, userId } = await requireAuth();
+  const { error } = await requireAuth();
   if (error) return error;
   const { id } = await params;
 
-  const t = await prisma.transcription.findFirst({ where: { id, userId } });
+  const t = await prisma.transcription.findUnique({ where: { id } });
   if (!t) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await prisma.transcription.delete({ where: { id } });

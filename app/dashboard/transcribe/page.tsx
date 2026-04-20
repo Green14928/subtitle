@@ -3,11 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { TranscribeClient } from "./transcribe-client";
 
 export default async function TranscribePage() {
-  const session = await auth();
-  const userId = session!.user!.id!;
+  await auth();
 
+  // 全站共用詞庫，不分 user
   const categories = await prisma.category.findMany({
-    where: { userId },
     include: { _count: { select: { terms: true } } },
     orderBy: { createdAt: "asc" },
   });

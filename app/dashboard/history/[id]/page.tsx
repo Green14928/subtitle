@@ -9,14 +9,16 @@ export default async function TranscriptionDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const session = await auth();
-  const userId = session!.user!.id!;
+  await auth();
 
-  const t = await prisma.transcription.findFirst({
-    where: { id, userId },
+  const t = await prisma.transcription.findUnique({
+    where: { id },
+    include: { user: { select: { name: true, email: true, image: true } } },
   });
 
   if (!t) notFound();
+
+  const uploader = t.user?.name || t.user?.email || "未知";
 
   return (
     <div className="space-y-4">
@@ -27,7 +29,7 @@ export default async function TranscriptionDetailPage({
       <div>
         <h1 className="text-2xl font-bold text-slate-900">{t.fileName}</h1>
         <p className="text-slate-600 text-sm mt-1">
-          {new Date(t.createdAt).toLocaleString("zh-TW")} · {t.status}
+          {new Date(t.createdAt).toLocaleString("zh-TW")} · {t.status} · 上傳者：{uploader}
         </p>
       </div>
 

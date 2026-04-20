@@ -3,11 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { DictionaryClient } from "./dictionary-client";
 
 export default async function DictionaryPage() {
-  const session = await auth();
-  const userId = session!.user!.id!;
+  await auth();
 
+  // 全站共用詞庫
   const categories = await prisma.category.findMany({
-    where: { userId },
     include: {
       terms: { orderBy: { createdAt: "asc" } },
       _count: { select: { terms: true } },

@@ -4,20 +4,22 @@ import Link from "next/link";
 import { formatBytes } from "@/lib/utils";
 
 export default async function HistoryPage() {
-  const session = await auth();
-  const userId = session!.user!.id!;
+  // 只要登入即可，不分 user 看所有紀錄
+  await auth();
 
   const list = await prisma.transcription.findMany({
-    where: { userId },
     orderBy: { createdAt: "desc" },
     take: 50,
+    include: {
+      user: { select: { name: true, email: true, image: true } },
+    },
   });
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">辨識紀錄</h1>
-        <p className="text-slate-600 mt-1">最近 50 筆</p>
+        <p className="text-slate-600 mt-1">最近 50 筆（全團隊共用）</p>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -37,6 +39,7 @@ export default async function HistoryPage() {
             <thead className="bg-slate-50 text-xs text-slate-600">
               <tr>
                 <th className="text-left px-4 py-3">檔名</th>
+                <th className="text-left px-4 py-3">上傳者</th>
                 <th className="text-left px-4 py-3">大小</th>
                 <th className="text-left px-4 py-3">狀態</th>
                 <th className="text-left px-4 py-3">時間</th>
@@ -48,6 +51,9 @@ export default async function HistoryPage() {
                 <tr key={t.id} className="border-t hover:bg-slate-50">
                   <td className="px-4 py-3 font-medium text-slate-900 truncate max-w-xs">
                     {t.fileName}
+                  </td>
+                  <td className="px-4 py-3 text-slate-700 text-xs">
+                    <UploaderCell user={t.user} />
                   </td>
                   <td className="px-4 py-3 text-slate-600">
                     {t.fileSize ? formatBytes(t.fileSize) : "-"}
@@ -75,6 +81,32 @@ export default async function HistoryPage() {
         )}
       </div>
     </div>
+  );
+}
+
+function UploaderCell({
+  user,
+}: {
+  user: { name: string | null; email: string; image: string | null } | null;
+}) {
+  if (!user) return <span className="text-slate-400">—</span>;
+  const label = user.name || user.email;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {user.image ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={user.image}
+          alt=""
+          className="w-5 h-5 rounded-full"
+        />
+      ) : (
+        <span className="w-5 h-5 rounded-full bg-slate-300 inline-flex items-center justify-center text-[10px] text-slate-700">
+          {label.slice(0, 1).toUpperCase()}
+        </span>
+      )}
+      <span className="truncate max-w-28">{label}</span>
+    </span>
   );
 }
 

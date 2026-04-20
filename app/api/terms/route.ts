@@ -4,12 +4,12 @@ import { requireAuth } from "@/lib/auth-helpers";
 import { z } from "zod";
 
 export async function GET(req: NextRequest) {
-  const { error, userId } = await requireAuth();
+  const { error } = await requireAuth();
   if (error) return error;
 
   const categoryId = req.nextUrl.searchParams.get("categoryId");
   const terms = await prisma.term.findMany({
-    where: { userId, ...(categoryId ? { categoryId } : {}) },
+    where: { ...(categoryId ? { categoryId } : {}) },
     orderBy: { createdAt: "asc" },
   });
 
@@ -41,11 +41,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: parsed.error.issues }, { status: 400 });
     }
     const { categoryId, texts } = parsed.data;
-    // 確認 category 屬於這個 user
-    const cat = await prisma.category.findFirst({ where: { id: categoryId, userId } });
+    const cat = await prisma.category.findUnique({ where: { id: categoryId } });
     if (!cat) return NextResponse.json({ error: "Category not found" }, { status: 404 });
 
     const unique = Array.from(new Set(texts.map((t) => t.trim()).filter(Boolean)));
+    // userId 仍寫入：紀錄「誰新增的」
     const created = await prisma.$transaction(
       unique.map((text) =>
         prisma.term.create({ data: { text, categoryId, userId } })
@@ -59,9 +59,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues }, { status: 400 });
   }
-  const cat = await prisma.category.findFirst({
-    where: { id: parsed.data.categoryId, userId },
-  });
+  const cat = await prisma.category.findUnique({ where: { id: parsed.data.categoryId } });
   if (!cat) return NextResponse.json({ error: "Category not found" }, { status: 404 });
 
   const term = await prisma.term.create({ data: { ...parsed.data, userId } });

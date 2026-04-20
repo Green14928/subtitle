@@ -13,7 +13,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { error, userId } = await requireAuth();
+  const { error } = await requireAuth();
   if (error) return error;
   const { id } = await params;
 
@@ -23,7 +23,7 @@ export async function PATCH(
     return NextResponse.json({ error: parsed.error.issues }, { status: 400 });
   }
 
-  const existing = await prisma.category.findFirst({ where: { id, userId } });
+  const existing = await prisma.category.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const updated = await prisma.category.update({
@@ -38,11 +38,11 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { error, userId } = await requireAuth();
+  const { error } = await requireAuth();
   if (error) return error;
   const { id } = await params;
 
-  const existing = await prisma.category.findFirst({ where: { id, userId } });
+  const existing = await prisma.category.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await prisma.category.delete({ where: { id } });

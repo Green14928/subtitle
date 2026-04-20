@@ -4,11 +4,10 @@ import { requireAuth } from "@/lib/auth-helpers";
 import { z } from "zod";
 
 export async function GET() {
-  const { error, userId } = await requireAuth();
+  const { error } = await requireAuth();
   if (error) return error;
 
   const categories = await prisma.category.findMany({
-    where: { userId },
     include: { _count: { select: { terms: true } } },
     orderBy: { createdAt: "asc" },
   });
@@ -32,6 +31,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.issues }, { status: 400 });
   }
 
+  // userId 仍寫入：紀錄「誰建的」
   const category = await prisma.category.create({
     data: { ...parsed.data, userId },
   });

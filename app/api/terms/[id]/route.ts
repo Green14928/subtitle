@@ -7,11 +7,11 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { error, userId } = await requireAuth();
+  const { error } = await requireAuth();
   if (error) return error;
   const { id } = await params;
 
-  const existing = await prisma.term.findFirst({ where: { id, userId } });
+  const existing = await prisma.term.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await prisma.term.delete({ where: { id } });
@@ -28,11 +28,11 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { error, userId } = await requireAuth();
+  const { error } = await requireAuth();
   if (error) return error;
   const { id } = await params;
 
-  const existing = await prisma.term.findFirst({ where: { id, userId } });
+  const existing = await prisma.term.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = await req.json();
