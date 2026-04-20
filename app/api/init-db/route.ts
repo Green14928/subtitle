@@ -106,6 +106,11 @@ const STATEMENTS = [
   // 2026-04-19 新增：progress + stage 欄位（Postgres 9.6+ 支援 IF NOT EXISTS）
   `ALTER TABLE "Transcription" ADD COLUMN IF NOT EXISTS "progress" INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE "Transcription" ADD COLUMN IF NOT EXISTS "stage" TEXT`,
+
+  // 2026-04-21 新增：詞庫 aliases + 辨識 matchMode / rawText
+  `ALTER TABLE "Term" ADD COLUMN IF NOT EXISTS "aliases" TEXT`,
+  `ALTER TABLE "Transcription" ADD COLUMN IF NOT EXISTS "matchMode" TEXT NOT NULL DEFAULT 'normal'`,
+  `ALTER TABLE "Transcription" ADD COLUMN IF NOT EXISTS "rawText" TEXT`,
 ];
 
 export async function POST(req: NextRequest) {

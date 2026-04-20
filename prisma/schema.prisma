@@ -83,6 +83,7 @@ model Category {
 model Term {
   id         String   @id @default(cuid())
   text       String   // 正確寫法，例：「梅爾卡巴」
+  aliases    String?  // JSON 陣列，常見錯字/誤寫，例：["梅卡巴","梅卡巴巴"]
   notes      String?  // 使用情境備註（可選）
   categoryId String
   category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
@@ -105,10 +106,12 @@ model Transcription {
   progress       Int      @default(0)          // 0-100 整體百分比
   stage          String?                        // 目前階段中文說明，例：抽音訊中 / 辨識中 (2/5)
   categoryIds    String   // JSON array，套用的詞庫分類
+  matchMode      String   @default("normal") // loose / normal / strict
   promptUsed     String?  // 實際送給 Whisper 的 prompt
-  srtContent     String?  // 完整 SRT 檔內容
-  vttContent     String?  // 完整 VTT 檔內容
-  plainText      String?  // 純文字逐字稿
+  srtContent     String?  // 最終輸出（已套用 matchMode 修正）
+  vttContent     String?
+  plainText      String?
+  rawText        String?  // Whisper 原始輸出（未修正），給使用者對照用
   errorMessage   String?
   replicateId    String?  // Replicate prediction id
   userId         String

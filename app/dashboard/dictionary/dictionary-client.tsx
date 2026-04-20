@@ -1,9 +1,25 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-type Term = { id: string; text: string; notes: string | null; categoryId: string };
+function parseAliases(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.map((x) => String(x)) : [];
+  } catch {
+    return [];
+  }
+}
+
+type Term = {
+  id: string;
+  text: string;
+  aliases: string | null; // JSON array as string
+  notes: string | null;
+  categoryId: string;
+};
 type Category = {
   id: string;
   name: string;
@@ -117,6 +133,24 @@ export function DictionaryClient({
       router.refresh();
     } catch {
       toast.error("刪除失敗");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveAliases(termId: string, aliases: string[]) {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/terms/${termId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ aliases }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success("已儲存常見錯字");
+      router.refresh();
+    } catch {
+      toast.error("儲存失敗");
     } finally {
       setLoading(false);
     }
@@ -258,34 +292,146 @@ export function DictionaryClient({
 
             {/* 詞彙列表 */}
             <div>
-              <h3 className="text-sm font-medium text-slate-700 mb-2">目前詞彙</h3>
+              <h3 className="text-sm font-medium text-slate-700 mb-1">目前詞彙</h3>
+              <p className="text-xs text-slate-500 mb-3">
+                每個詞可以加「常見錯字」—— 選「正常」或「嚴格」比對模式時會把辨識結果的錯字自動換成正確寫法。
+              </p>
               {selected.terms.length === 0 ? (
                 <p className="text-sm text-slate-500 text-center py-8">
                   還沒有詞彙，從上方批量新增開始 ☝️
                 </p>
               ) : (
-                <div className="flex flex-wrap gap-2">
+                <ul className="space-y-2">
                   {selected.terms.map((term) => (
-                    <span
+                    <TermRow
                       key={term.id}
-                      className="group inline-flex items-center gap-1 bg-violet-50 text-violet-900 border border-violet-200 px-3 py-1.5 rounded-full text-sm"
-                    >
-                      {term.text}
-                      <button
-                        onClick={() => deleteTerm(term.id)}
-                        className="opacity-0 group-hover:opacity-100 text-violet-500 hover:text-red-600 ml-1"
-                        title="刪除"
-                      >
-                        ✕
-                      </button>
-                    </span>
+                      term={term}
+                      disabled={loading}
+                      onSave={(aliases) => saveAliases(term.id, aliases)}
+                      onDelete={() => deleteTerm(term.id)}
+                    />
                   ))}
-                </div>
+                </ul>
               )}
             </div>
           </div>
         )}
       </section>
     </div>
+  );
+}
+
+function TermRow({
+  term,
+  disabled,
+  onSave,
+  onDelete,
+}: {
+  term: Term;
+  disabled: boolean;
+  onSave: (aliases: string[]) => void;
+  onDelete: () => void;
+}) {
+  const initial = parseAliases(term.aliases);
+  const [aliases, setAliases] = useState<string[]>(initial);
+  const [input, setInput] = useState("");
+
+  useEffect(() => {
+    setAliases(parseAliases(term.aliases));
+  }, [term.aliases]);
+
+  const dirty =
+    aliases.length !== initial.length ||
+    aliases.some((a, i) => a !== initial[i]);
+
+  function addAliasFromInput() {
+    const parts = input
+      .split(/[,，、\n]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (parts.length === 0) return;
+    setAliases((prev) => Array.from(new Set([...prev, ...parts])));
+    setInput("");
+  }
+
+  function removeAlias(a: string) {
+    setAliases((prev) => prev.filter((x) => x !== a));
+  }
+
+  return (
+    <li className="border border-slate-200 rounded-lg p-3 bg-white">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="bg-violet-100 text-violet-900 px-2.5 py-1 rounded-full text-sm font-medium">
+          {term.text}
+        </span>
+        <span className="text-xs text-slate-400">← 正確寫法</span>
+        <button
+          onClick={onDelete}
+          disabled={disabled}
+          className="ml-auto text-xs text-slate-400 hover:text-red-600 px-2 py-1"
+          title="刪除整個詞"
+        >
+          ✕ 刪除
+        </button>
+      </div>
+      <div>
+        <label className="text-xs text-slate-600">
+          常見錯字（按 Enter 或逗號新增）
+        </label>
+        <div className="flex flex-wrap items-center gap-1.5 mt-1 p-2 border border-slate-200 rounded-md min-h-9">
+          {aliases.map((a) => (
+            <span
+              key={a}
+              className="inline-flex items-center gap-1 bg-amber-50 text-amber-900 border border-amber-200 px-2 py-0.5 rounded text-xs"
+            >
+              {a}
+              <button
+                onClick={() => removeAlias(a)}
+                className="text-amber-600 hover:text-red-600"
+                title="移除"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === "," || e.key === "，") {
+                e.preventDefault();
+                addAliasFromInput();
+              } else if (e.key === "Backspace" && !input && aliases.length > 0) {
+                setAliases((prev) => prev.slice(0, -1));
+              }
+            }}
+            onBlur={addAliasFromInput}
+            placeholder={aliases.length === 0 ? "例：梅卡巴、梅卡巴巴" : ""}
+            className="flex-1 min-w-40 text-xs outline-none bg-transparent"
+          />
+        </div>
+        {dirty && (
+          <div className="flex gap-2 mt-2">
+            <button
+              onClick={() => onSave(aliases)}
+              disabled={disabled}
+              className="text-xs bg-violet-600 text-white px-3 py-1.5 rounded hover:bg-violet-700 disabled:opacity-50"
+            >
+              儲存
+            </button>
+            <button
+              onClick={() => {
+                setAliases(initial);
+                setInput("");
+              }}
+              disabled={disabled}
+              className="text-xs bg-slate-200 text-slate-700 px-3 py-1.5 rounded hover:bg-slate-300"
+            >
+              取消
+            </button>
+          </div>
+        )}
+      </div>
+    </li>
   );
 }

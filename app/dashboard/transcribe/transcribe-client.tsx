@@ -22,10 +22,13 @@ type Transcription = {
   promptUsed: string | null;
 };
 
+type MatchMode = "loose" | "normal" | "strict";
+
 export function TranscribeClient({ categories }: { categories: Category[] }) {
   const [file, setFile] = useState<File | null>(null);
   const [selectedCats, setSelectedCats] = useState<Set<string>>(new Set());
   const [language, setLanguage] = useState("zh");
+  const [matchMode, setMatchMode] = useState<MatchMode>("normal");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0); // 0-100
   const [currentId, setCurrentId] = useState<string | null>(null);
@@ -74,6 +77,7 @@ export function TranscribeClient({ categories }: { categories: Category[] }) {
       const { id } = await uploadWithProgress(file, {
         categoryIds: Array.from(selectedCats),
         language,
+        matchMode,
         onProgress: (pct) => setUploadProgress(pct),
       });
       setCurrentId(id);
@@ -212,6 +216,45 @@ export function TranscribeClient({ categories }: { categories: Category[] }) {
         </select>
       </section>
 
+      {/* Step 4: 詞庫比對嚴格度 */}
+      <section>
+        <h2 className="text-sm font-bold text-slate-900 mb-2">
+          4. 詞庫比對嚴格度
+        </h2>
+        <p className="text-xs text-slate-500 mb-3">
+          控制辨識完後「要不要把錯字換成詞庫裡的正確寫法」。
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <MatchModeCard
+            active={matchMode === "loose"}
+            onClick={() => setMatchMode("loose")}
+            disabled={!!busy}
+            emoji="🟢"
+            label="寬鬆"
+            desc="只提示 Whisper，不做後處理。適合主題雜、怕誤傷的影片。"
+            cost="免費"
+          />
+          <MatchModeCard
+            active={matchMode === "normal"}
+            onClick={() => setMatchMode("normal")}
+            disabled={!!busy}
+            emoji="🟡"
+            label="正常（預設）"
+            desc="只替換「常見錯字」清單裡的詞（詞庫要填 aliases 才會生效）。"
+            cost="免費"
+          />
+          <MatchModeCard
+            active={matchMode === "strict"}
+            onClick={() => setMatchMode("strict")}
+            disabled={!!busy}
+            emoji="🔴"
+            label="嚴格"
+            desc="整篇丟 GPT-4 看完整詞庫重校。精準度最高。"
+            cost="+ $0.5/小時"
+          />
+        </div>
+      </section>
+
       {/* 執行 */}
       <div className="flex gap-3 pt-4 border-t">
         <button
@@ -346,10 +389,53 @@ function ProgressBar({ percent, label }: { percent: number; label: string }) {
   );
 }
 
+function MatchModeCard({
+  active,
+  onClick,
+  disabled,
+  emoji,
+  label,
+  desc,
+  cost,
+}: {
+  active: boolean;
+  onClick: () => void;
+  disabled: boolean;
+  emoji: string;
+  label: string;
+  desc: string;
+  cost: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`text-left p-3 rounded-xl border-2 transition ${
+        active
+          ? "border-violet-500 bg-violet-50"
+          : "border-slate-200 hover:border-slate-300 bg-white"
+      } disabled:opacity-50 disabled:cursor-not-allowed`}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-base">{emoji}</span>
+        <span className="font-medium text-sm text-slate-900">{label}</span>
+      </div>
+      <p className="text-xs text-slate-600 leading-snug">{desc}</p>
+      <p className="text-[11px] text-slate-500 mt-1">{cost}</p>
+    </button>
+  );
+}
+
 // 用 XHR 包一層上傳，提供 onProgress
 function uploadWithProgress(
   file: File,
-  opts: { categoryIds: string[]; language: string; onProgress: (pct: number) => void }
+  opts: {
+    categoryIds: string[];
+    language: string;
+    matchMode: string;
+    onProgress: (pct: number) => void;
+  }
 ): Promise<{ id: string }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -361,6 +447,7 @@ function uploadWithProgress(
     xhr.setRequestHeader("X-File-Name", encodeURIComponent(file.name));
     xhr.setRequestHeader("X-Language", opts.language);
     xhr.setRequestHeader("X-Category-Ids", JSON.stringify(opts.categoryIds));
+    xhr.setRequestHeader("X-Match-Mode", opts.matchMode);
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) {
