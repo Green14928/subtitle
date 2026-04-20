@@ -15,10 +15,14 @@
   --text-muted: #7a756d;
 
   --accent: #c5956b;
-  --accent-light: rgba(184, 134, 11, 0.08);
+  --accent-light: rgba(197, 149, 107, 0.08);
+  --accent-soft-border: rgba(197, 149, 107, 0.25);
+  --accent-hover: #f7f4ee;
+  --accent-active: #f0e7d8;
 
   --green: #7d9e6a;
   --green-light: rgba(125, 158, 106, 0.10);
+  --green-deep: #5a7a4a;
   --red: #c0564b;
   --red-light: rgba(192, 86, 75, 0.08);
 
@@ -455,7 +459,7 @@ h3 {
   font-weight: 600;
   letter-spacing: 1px;
 }
-.status-tag.done { background: var(--green-light); color: var(--green); }
+.status-tag.done { background: var(--green-light); color: var(--green-deep); }
 .status-tag.fail { background: var(--red-light); color: var(--red); }
 .status-tag.run  { background: var(--product-light); color: var(--product); }
 .status-tag.wait { background: rgba(122,117,109,0.08); color: var(--text-muted); }
