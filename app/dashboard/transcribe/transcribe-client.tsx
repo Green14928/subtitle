@@ -26,7 +26,11 @@ type MatchMode = "loose" | "normal" | "strict";
 
 export function TranscribeClient({ categories }: { categories: Category[] }) {
   const [file, setFile] = useState<File | null>(null);
-  const [selectedCats, setSelectedCats] = useState<Set<string>>(new Set());
+  // 預設全選所有分類；使用者可在「進階」裡改
+  const [selectedCats, setSelectedCats] = useState<Set<string>>(
+    () => new Set(categories.map((c) => c.id))
+  );
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [language, setLanguage] = useState("zh");
   const [matchMode, setMatchMode] = useState<MatchMode>("normal");
   const [uploading, setUploading] = useState(false);
@@ -151,52 +155,90 @@ export function TranscribeClient({ categories }: { categories: Category[] }) {
         </label>
       </section>
 
-      {/* Step 2: 詞庫 */}
+      {/* Step 2: 詞庫（預設全套，進階可挑） */}
       <section>
-        <h2 className="text-sm font-bold text-slate-900 mb-2">
-          2. 選擇要套用的詞庫（可多選）
-        </h2>
+        <h2 className="text-sm font-bold text-slate-900 mb-2">2. 詞庫</h2>
         {categories.length === 0 ? (
           <p className="text-sm text-slate-500 py-4">
-            你還沒建立任何詞庫。
+            還沒建立任何詞庫。
             <a href="/dashboard/dictionary" className="text-violet-600 underline ml-1">
               去建立詞庫 →
             </a>
           </p>
         ) : (
-          <div className="flex flex-wrap gap-2">
-            {categories.map((cat) => {
-              const selected = selectedCats.has(cat.id);
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => toggleCategory(cat.id)}
-                  disabled={!!busy}
-                  className={`px-4 py-2 rounded-full text-sm border transition ${
-                    selected
-                      ? "bg-violet-600 text-white border-violet-600"
-                      : "bg-white text-slate-700 border-slate-300 hover:border-violet-400"
-                  }`}
-                >
-                  {cat.name}
-                  <span className="ml-2 text-xs opacity-75">
-                    {cat._count.terms}
-                  </span>
-                </button>
-              );
-            })}
+          <div className="bg-slate-50 rounded-lg p-3 space-y-2">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <p className="text-sm text-slate-700">
+                已套用{" "}
+                <span className="font-bold text-violet-700">
+                  {selectedCats.size}/{categories.length}
+                </span>{" "}
+                個分類、共{" "}
+                <span className="font-bold text-violet-700">
+                  {categories
+                    .filter((c) => selectedCats.has(c.id))
+                    .reduce((s, c) => s + c._count.terms, 0)}
+                </span>{" "}
+                個詞彙
+              </p>
+              <button
+                type="button"
+                onClick={() => setAdvancedOpen((v) => !v)}
+                disabled={!!busy}
+                className="text-xs text-violet-600 hover:underline"
+              >
+                {advancedOpen ? "收起 ▲" : "進階：只套用部分分類 ▼"}
+              </button>
+            </div>
+            {advancedOpen && (
+              <div className="space-y-2 pt-2 border-t border-slate-200">
+                <div className="flex gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSelectedCats(new Set(categories.map((c) => c.id)))
+                    }
+                    disabled={!!busy}
+                    className="text-violet-600 hover:underline"
+                  >
+                    全選
+                  </button>
+                  <span className="text-slate-300">|</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCats(new Set())}
+                    disabled={!!busy}
+                    className="text-slate-600 hover:underline"
+                  >
+                    全不選
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {categories.map((cat) => {
+                    const selected = selectedCats.has(cat.id);
+                    return (
+                      <button
+                        type="button"
+                        key={cat.id}
+                        onClick={() => toggleCategory(cat.id)}
+                        disabled={!!busy}
+                        className={`px-3 py-1.5 rounded-full text-sm border transition ${
+                          selected
+                            ? "bg-violet-600 text-white border-violet-600"
+                            : "bg-white text-slate-700 border-slate-300 hover:border-violet-400"
+                        }`}
+                      >
+                        {cat.name}
+                        <span className="ml-2 text-xs opacity-75">
+                          {cat._count.terms}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
-        )}
-        {selectedCats.size > 0 && (
-          <p className="text-xs text-slate-500 mt-2">
-            已選 {selectedCats.size} 個分類，共
-            {" "}
-            {categories
-              .filter((c) => selectedCats.has(c.id))
-              .reduce((s, c) => s + c._count.terms, 0)}
-            {" "}
-            個詞彙會當作 prompt
-          </p>
         )}
       </section>
 

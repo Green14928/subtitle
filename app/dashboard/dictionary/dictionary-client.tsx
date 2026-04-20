@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 function parseAliases(raw: string | null): string[] {
@@ -16,7 +15,7 @@ function parseAliases(raw: string | null): string[] {
 type Term = {
   id: string;
   text: string;
-  aliases: string | null; // JSON array as string
+  aliases: string | null;
   notes: string | null;
   categoryId: string;
 };
@@ -30,12 +29,12 @@ type Category = {
 };
 
 const COLORS = [
-  "bg-violet-100 text-violet-700 border-violet-200",
-  "bg-pink-100 text-pink-700 border-pink-200",
-  "bg-blue-100 text-blue-700 border-blue-200",
-  "bg-emerald-100 text-emerald-700 border-emerald-200",
-  "bg-amber-100 text-amber-700 border-amber-200",
-  "bg-rose-100 text-rose-700 border-rose-200",
+  "bg-violet-400",
+  "bg-pink-400",
+  "bg-blue-400",
+  "bg-emerald-400",
+  "bg-amber-400",
+  "bg-rose-400",
 ];
 
 export function DictionaryClient({
@@ -43,7 +42,6 @@ export function DictionaryClient({
 }: {
   initialCategories: Category[];
 }) {
-  const router = useRouter();
   const [categories, setCategories] = useState<Category[]>(initialCategories);
   const [selectedId, setSelectedId] = useState<string | null>(
     initialCategories[0]?.id ?? null
@@ -65,14 +63,47 @@ export function DictionaryClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newCatName, description: newCatDesc }),
       });
-      if (!res.ok) throw new Error("建立失敗");
+      if (!res.ok) throw new Error();
+      const cat = await res.json();
+      const created: Category = {
+        ...cat,
+        terms: [],
+        _count: { terms: 0 },
+      };
+      setCategories((prev) => [...prev, created]);
+      setSelectedId(created.id);
       toast.success("分類已建立");
       setNewCatOpen(false);
       setNewCatName("");
       setNewCatDesc("");
-      router.refresh();
-    } catch (e) {
+    } catch {
       toast.error("建立分類失敗");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function updateCategory(
+    id: string,
+    data: { name?: string; description?: string | null }
+  ) {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/categories/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error();
+      const updated = await res.json();
+      setCategories((prev) =>
+        prev.map((c) =>
+          c.id === id ? { ...c, name: updated.name, description: updated.description } : c
+        )
+      );
+      toast.success("已更新");
+    } catch {
+      toast.error("更新失敗");
     } finally {
       setLoading(false);
     }
@@ -84,10 +115,12 @@ export function DictionaryClient({
     try {
       const res = await fetch(`/api/categories/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error();
-      toast.success("已刪除");
       setCategories((prev) => prev.filter((c) => c.id !== id));
-      if (selectedId === id) setSelectedId(null);
-      router.refresh();
+      if (selectedId === id) {
+        const remaining = categories.filter((c) => c.id !== id);
+        setSelectedId(remaining[0]?.id ?? null);
+      }
+      toast.success("已刪除");
     } catch {
       toast.error("刪除失敗");
     } finally {
@@ -113,10 +146,20 @@ export function DictionaryClient({
         body: JSON.stringify({ categoryId: selected.id, texts }),
       });
       if (!res.ok) throw new Error();
-      const { count } = await res.json();
-      toast.success(`已新增 ${count} 個詞彙`);
+      // 回抓此分類最新 terms 才能拿到 id
+      const termsRes = await fetch(`/api/terms?categoryId=${selected.id}`);
+      if (termsRes.ok) {
+        const list: Term[] = await termsRes.json();
+        setCategories((prev) =>
+          prev.map((c) =>
+            c.id === selected.id
+              ? { ...c, terms: list, _count: { terms: list.length } }
+              : c
+          )
+        );
+      }
+      toast.success(`已新增 ${texts.length} 個詞彙`);
       setBulkText("");
-      router.refresh();
     } catch {
       toast.error("新增失敗");
     } finally {
@@ -124,13 +167,23 @@ export function DictionaryClient({
     }
   }
 
-  async function deleteTerm(id: string) {
+  async function deleteTerm(termId: string, categoryId: string) {
     setLoading(true);
     try {
-      const res = await fetch(`/api/terms/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/terms/${termId}`, { method: "DELETE" });
       if (!res.ok) throw new Error();
+      setCategories((prev) =>
+        prev.map((c) =>
+          c.id === categoryId
+            ? {
+                ...c,
+                terms: c.terms.filter((t) => t.id !== termId),
+                _count: { terms: c._count.terms - 1 },
+              }
+            : c
+        )
+      );
       toast.success("已刪除");
-      router.refresh();
     } catch {
       toast.error("刪除失敗");
     } finally {
@@ -147,8 +200,18 @@ export function DictionaryClient({
         body: JSON.stringify({ aliases }),
       });
       if (!res.ok) throw new Error();
+      const updated: Term = await res.json();
+      setCategories((prev) =>
+        prev.map((c) =>
+          c.id === updated.categoryId
+            ? {
+                ...c,
+                terms: c.terms.map((t) => (t.id === termId ? updated : t)),
+              }
+            : c
+        )
+      );
       toast.success("已儲存常見錯字");
-      router.refresh();
     } catch {
       toast.error("儲存失敗");
     } finally {
@@ -224,15 +287,17 @@ export function DictionaryClient({
                     : "hover:bg-slate-100 text-slate-700"
                 }`}
               >
-                <span className="flex items-center gap-2">
+                <span className="flex items-center gap-2 min-w-0">
                   <span
-                    className={`w-2 h-2 rounded-full ${
-                      COLORS[idx % COLORS.length].split(" ")[0]
+                    className={`w-2 h-2 rounded-full shrink-0 ${
+                      COLORS[idx % COLORS.length]
                     }`}
                   />
                   <span className="truncate">{cat.name}</span>
                 </span>
-                <span className="text-xs text-slate-500">{cat._count.terms}</span>
+                <span className="text-xs text-slate-500 shrink-0">
+                  {cat._count.terms}
+                </span>
               </button>
             </li>
           ))}
@@ -248,23 +313,13 @@ export function DictionaryClient({
           </div>
         ) : (
           <div className="space-y-6">
-            <div className="flex items-start justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">{selected.name}</h2>
-                {selected.description && (
-                  <p className="text-sm text-slate-600 mt-1">{selected.description}</p>
-                )}
-                <p className="text-xs text-slate-500 mt-1">
-                  共 {selected.terms.length} 個詞彙
-                </p>
-              </div>
-              <button
-                onClick={() => deleteCategory(selected.id, selected.name)}
-                className="text-xs text-red-600 hover:bg-red-50 px-3 py-1.5 rounded"
-              >
-                刪除此分類
-              </button>
-            </div>
+            <CategoryHeader
+              key={selected.id}
+              category={selected}
+              disabled={loading}
+              onSave={(data) => updateCategory(selected.id, data)}
+              onDelete={() => deleteCategory(selected.id, selected.name)}
+            />
 
             {/* 批量新增區 */}
             <div className="bg-slate-50 rounded-lg p-4 space-y-2">
@@ -308,7 +363,7 @@ export function DictionaryClient({
                       term={term}
                       disabled={loading}
                       onSave={(aliases) => saveAliases(term.id, aliases)}
-                      onDelete={() => deleteTerm(term.id)}
+                      onDelete={() => deleteTerm(term.id, selected.id)}
                     />
                   ))}
                 </ul>
@@ -317,6 +372,101 @@ export function DictionaryClient({
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+function CategoryHeader({
+  category,
+  disabled,
+  onSave,
+  onDelete,
+}: {
+  category: Category;
+  disabled: boolean;
+  onSave: (data: { name: string; description: string | null }) => void;
+  onDelete: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(category.name);
+  const [desc, setDesc] = useState(category.description ?? "");
+
+  useEffect(() => {
+    setName(category.name);
+    setDesc(category.description ?? "");
+    setEditing(false);
+  }, [category.id, category.name, category.description]);
+
+  if (editing) {
+    return (
+      <div className="space-y-2 bg-slate-50 rounded-lg p-3">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="分類名稱"
+          className="w-full text-base font-bold border border-slate-300 rounded px-2 py-1.5"
+          autoFocus
+        />
+        <input
+          value={desc}
+          onChange={(e) => setDesc(e.target.value)}
+          placeholder="說明（可選）"
+          className="w-full text-sm border border-slate-300 rounded px-2 py-1.5"
+        />
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              if (!name.trim()) return;
+              onSave({ name: name.trim(), description: desc.trim() || null });
+              setEditing(false);
+            }}
+            disabled={disabled || !name.trim()}
+            className="text-xs bg-violet-600 text-white px-3 py-1.5 rounded hover:bg-violet-700 disabled:opacity-50"
+          >
+            儲存
+          </button>
+          <button
+            onClick={() => {
+              setName(category.name);
+              setDesc(category.description ?? "");
+              setEditing(false);
+            }}
+            className="text-xs bg-slate-200 text-slate-700 px-3 py-1.5 rounded hover:bg-slate-300"
+          >
+            取消
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <h2 className="text-xl font-bold text-slate-900 truncate">{category.name}</h2>
+        {category.description && (
+          <p className="text-sm text-slate-600 mt-1">{category.description}</p>
+        )}
+        <p className="text-xs text-slate-500 mt-1">
+          共 {category.terms.length} 個詞彙
+        </p>
+      </div>
+      <div className="flex gap-1 shrink-0">
+        <button
+          onClick={() => setEditing(true)}
+          disabled={disabled}
+          className="text-xs text-slate-600 hover:bg-slate-100 px-3 py-1.5 rounded"
+        >
+          ✎ 編輯
+        </button>
+        <button
+          onClick={onDelete}
+          disabled={disabled}
+          className="text-xs text-red-600 hover:bg-red-50 px-3 py-1.5 rounded"
+        >
+          刪除
+        </button>
+      </div>
     </div>
   );
 }
@@ -346,7 +496,7 @@ function TermRow({
 
   function addAliasFromInput() {
     const parts = input
-      .split(/[,，、\n]/)
+      .split(/[,,、\n]/)
       .map((s) => s.trim())
       .filter(Boolean);
     if (parts.length === 0) return;
