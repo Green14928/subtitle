@@ -34,38 +34,21 @@ export default async function LoginPage({ searchParams }: PageProps) {
         }}
       >
         <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div
-            style={{
-              width: 48,
-              height: 48,
-              borderRadius: 8,
-              background: "var(--text)",
-              color: "var(--bg-card)",
-              display: "inline-grid",
-              placeItems: "center",
-              fontFamily: "var(--font-serif)",
-              fontSize: 24,
-              fontWeight: 700,
-              marginBottom: 16,
-            }}
-          >
-            字
-          </div>
           <h1
             style={{
               fontFamily: "var(--font-serif)",
-              fontSize: 22,
+              fontSize: 24,
               letterSpacing: 3,
               margin: 0,
             }}
           >
-            Subtitle
+            Ascend.Subtitle
           </h1>
           <p
             style={{
               fontSize: "var(--fs-sm)",
               color: "var(--text-muted)",
-              marginTop: 4,
+              marginTop: 6,
               fontWeight: 400,
             }}
           >

@@ -3,7 +3,7 @@ import "./globals.css";
 import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
-  title: "Subtitle 字幕辨識系統",
+  title: "Ascend.Subtitle 字幕辨識系統",
   description: "Whisper large-v3 + 自訂詞庫的字幕辨識工具",
 };
 

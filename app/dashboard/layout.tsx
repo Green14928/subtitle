@@ -15,8 +15,7 @@ export default async function DashboardLayout({
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          <div className="brand-mark">字</div>
-          <span>Subtitle</span>
+          <span>Ascend.Subtitle</span>
         </div>
         <NavLinks />
         <div className="topbar-right">
