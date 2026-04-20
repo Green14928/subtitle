@@ -15,10 +15,7 @@ export function SignOutButton() {
     <form method="post" action="/api/auth/signout">
       <input type="hidden" name="csrfToken" value={csrfToken} />
       <input type="hidden" name="callbackUrl" value="/login" />
-      <button
-        type="submit"
-        className="text-sm text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-lg hover:bg-slate-100"
-      >
+      <button type="submit" className="logout" style={{ background: "transparent", border: "none", font: "inherit", cursor: "pointer" }}>
         登出
       </button>
     </form>

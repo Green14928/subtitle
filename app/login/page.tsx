@@ -12,25 +12,93 @@ export default async function LoginPage({ searchParams }: PageProps) {
   if (session) redirect(sp.callbackUrl || "/dashboard");
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-violet-50 to-pink-50 p-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-violet-100 mb-4">
-            <span className="text-3xl">🎬</span>
+    <main
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+        background: "var(--bg)",
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 420,
+          background: "var(--bg-card)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-lg)",
+          boxShadow: "var(--shadow-md)",
+          padding: 36,
+        }}
+      >
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <div
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 8,
+              background: "var(--text)",
+              color: "var(--bg-card)",
+              display: "inline-grid",
+              placeItems: "center",
+              fontFamily: "var(--font-serif)",
+              fontSize: 24,
+              fontWeight: 700,
+              marginBottom: 16,
+            }}
+          >
+            字
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">Subtitle</h1>
-          <p className="text-sm text-slate-600 mt-1">字幕辨識系統</p>
+          <h1
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: 22,
+              letterSpacing: 3,
+              margin: 0,
+            }}
+          >
+            Subtitle
+          </h1>
+          <p
+            style={{
+              fontSize: "var(--fs-sm)",
+              color: "var(--text-muted)",
+              marginTop: 4,
+              fontWeight: 400,
+            }}
+          >
+            字幕辨識系統
+          </p>
         </div>
 
         {sp.error && (
-          <div className="mb-4 p-3 rounded-lg bg-red-50 text-red-700 text-sm">
+          <div
+            style={{
+              marginBottom: 16,
+              padding: 12,
+              borderRadius: "var(--radius)",
+              background: "var(--red-light)",
+              color: "var(--red)",
+              fontSize: "var(--fs-sm)",
+            }}
+          >
             登入失敗：{sp.error}
           </div>
         )}
 
         <SignInButton callbackUrl={sp.callbackUrl || "/dashboard"} />
 
-        <p className="text-xs text-slate-400 text-center mt-6">
+        <p
+          style={{
+            fontSize: "var(--fs-xs)",
+            color: "var(--text-muted)",
+            textAlign: "center",
+            marginTop: 20,
+            fontWeight: 400,
+          }}
+        >
           只允許白名單 Google 帳號登入
         </p>
       </div>
