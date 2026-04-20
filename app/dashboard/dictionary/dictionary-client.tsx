@@ -496,7 +496,7 @@ function TermRow({
 
   function addAliasFromInput() {
     const parts = input
-      .split(/[,,、\n]/)
+      .split(/[,，、\n]/)
       .map((s) => s.trim())
       .filter(Boolean);
     if (parts.length === 0) return;
@@ -548,6 +548,13 @@ function TermRow({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
+              // 中文輸入法選字中：Enter 是「選字確認」，不要當作送出
+              if (
+                e.nativeEvent.isComposing ||
+                (e.nativeEvent as KeyboardEvent).keyCode === 229
+              ) {
+                return;
+              }
               if (e.key === "Enter" || e.key === "," || e.key === "，") {
                 e.preventDefault();
                 addAliasFromInput();
