@@ -6,15 +6,18 @@ export type Segment = {
   text: string;
 };
 
-// 修正連續字幕時間重疊：若前句 end > 後句 start，把前句 end 拉回後句 start
-// 後句時間為主（不動）；前後句剛好對齊（end == start）視為正常不處理
-// Whisper 偶爾會回前後句時間交疊（~100-300ms），會造成播放器字幕閃爍或疊字
+// 修正連續字幕時間重疊 / 邊界相接：若前句 end >= 後句 start，把前句 end 拉回後句 start - 1ms
+// 後句時間為主（不動）；Whisper 原生 segment 常常前後句首尾完全對齊，
+// 在播放器上看起來像兩句同時顯示一 frame，所以相接也要拉開
+const MIN_GAP_SEC = 0.001;
 export function clampSegmentOverlaps(segments: Segment[]): Segment[] {
   if (segments.length < 2) return segments;
   const out = segments.map((s) => ({ ...s }));
   for (let i = 0; i < out.length - 1; i++) {
-    if (out[i].end > out[i + 1].start) {
-      out[i].end = out[i + 1].start;
+    if (out[i].end >= out[i + 1].start) {
+      const target = out[i + 1].start - MIN_GAP_SEC;
+      // 防極短 cue：若拉回會讓 end <= start，退回成至少 start + MIN_GAP_SEC
+      out[i].end = target > out[i].start ? target : out[i].start + MIN_GAP_SEC;
     }
   }
   return out;
