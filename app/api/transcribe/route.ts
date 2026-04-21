@@ -7,7 +7,7 @@ import {
   type Word,
 } from "@/lib/openai-transcribe";
 import { prepareAudioForTranscribe, safeUnlink } from "@/lib/audio";
-import { segmentsToSRT, segmentsToVTT, segmentsToPlainText, type Segment } from "@/lib/srt";
+import { segmentsToSRT, segmentsToVTT, segmentsToPlainText, clampSegmentOverlaps, type Segment } from "@/lib/srt";
 import { applyDictionary, parseAliases, type TermEntry } from "@/lib/keyword-correct";
 import { correctWithLLM } from "@/lib/llm-correct";
 import { mkdir, stat } from "fs/promises";
@@ -221,6 +221,9 @@ async function processTranscription(
       await setStage(90, "GPT-4 校正專有名詞");
       finalSegments = await correctWithLLM(rebuilt, termEntries);
     }
+
+    // 最終修正：把前後句時間重疊處拉齊（以後句 start 為主）
+    finalSegments = clampSegmentOverlaps(finalSegments);
 
     await prisma.transcription.update({
       where: { id },

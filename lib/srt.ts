@@ -6,6 +6,20 @@ export type Segment = {
   text: string;
 };
 
+// 修正連續字幕時間重疊：若前句 end > 後句 start，把前句 end 拉回後句 start
+// 後句時間為主（不動）；前後句剛好對齊（end == start）視為正常不處理
+// Whisper 偶爾會回前後句時間交疊（~100-300ms），會造成播放器字幕閃爍或疊字
+export function clampSegmentOverlaps(segments: Segment[]): Segment[] {
+  if (segments.length < 2) return segments;
+  const out = segments.map((s) => ({ ...s }));
+  for (let i = 0; i < out.length - 1; i++) {
+    if (out[i].end > out[i + 1].start) {
+      out[i].end = out[i + 1].start;
+    }
+  }
+  return out;
+}
+
 function formatTimeSRT(sec: number) {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
