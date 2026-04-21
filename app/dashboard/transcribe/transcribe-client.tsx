@@ -584,7 +584,8 @@ export function TranscribeClient({ categories }: { categories: Category[] }) {
                 result?.srtContent &&
                 download(
                   result.srtContent,
-                  (file?.name || "subtitle").replace(/\.[^.]+$/, "") + ".srt",
+                  (file?.name || "subtitle").replace(/\.[^.]+$/, "") +
+                    "_字幕檔.srt",
                   "text/plain"
                 )
               }
@@ -599,7 +600,8 @@ export function TranscribeClient({ categories }: { categories: Category[] }) {
                 result?.vttContent &&
                 download(
                   result.vttContent,
-                  (file?.name || "subtitle").replace(/\.[^.]+$/, "") + ".vtt",
+                  (file?.name || "subtitle").replace(/\.[^.]+$/, "") +
+                    "_網頁字幕.vtt",
                   "text/vtt"
                 )
               }
@@ -614,7 +616,8 @@ export function TranscribeClient({ categories }: { categories: Category[] }) {
                 result?.plainText &&
                 download(
                   result.plainText,
-                  (file?.name || "subtitle").replace(/\.[^.]+$/, "") + ".txt",
+                  (file?.name || "subtitle").replace(/\.[^.]+$/, "") +
+                    "_逐字稿.txt",
                   "text/plain"
                 )
               }
@@ -629,7 +632,7 @@ export function TranscribeClient({ categories }: { categories: Category[] }) {
                   download(
                     result.rawText!,
                     (file?.name || "subtitle").replace(/\.[^.]+$/, "") +
-                      ".raw.txt",
+                      "_原始辨識.raw.txt",
                     "text/plain"
                   )
                 }

@@ -14,13 +14,19 @@ export function HistoryDetailDownloads({
   raw: string | null;
 }) {
   const base = fileName.replace(/\.[^.]+$/, "") || "subtitle";
+  const LABEL: Record<string, string> = {
+    srt: "_字幕檔",
+    vtt: "_網頁字幕",
+    txt: "_逐字稿",
+    "raw.txt": "_原始辨識",
+  };
 
   function download(content: string, ext: string, mime: string) {
     const blob = new Blob([content], { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${base}.${ext}`;
+    a.download = `${base}${LABEL[ext] ?? ""}.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
   }
