@@ -8,7 +8,6 @@ import {
 } from "@/lib/openai-transcribe";
 import { prepareAudioForTranscribe, safeUnlink } from "@/lib/audio";
 import { segmentsToSRT, segmentsToVTT, segmentsToPlainText, type Segment } from "@/lib/srt";
-import { buildSegmentsFromWords } from "@/lib/segment-builder";
 import { applyDictionary, parseAliases, type TermEntry } from "@/lib/keyword-correct";
 import { correctWithLLM } from "@/lib/llm-correct";
 import { mkdir, stat } from "fs/promises";
@@ -206,12 +205,11 @@ async function processTranscription(
       allFallback.push(...res.segments);
     }
 
-    // word-level 重組字幕 → 時間軸精準
-    await setStage(85, "組合時間軸");
-    const rebuilt = buildSegmentsFromWords(
-      allWords.sort((a, b) => a.start - b.start),
-      allFallback.sort((a, b) => a.start - b.start)
-    );
+    // 直接採用 Whisper 原生 segment 的斷句（語意切得比自重組還自然）
+    // word-level timestamps 先收著，未來若需要精細時間軸再用
+    await setStage(85, "整理字幕");
+    const rebuilt: Segment[] = allFallback.sort((a, b) => a.start - b.start);
+    void allWords;
     const rawText = rebuilt.map((s) => s.text).join("\n");
 
     // 套 matchMode 修正
